@@ -1,6 +1,5 @@
-#include "../include/http_server.h"
-#include "engine.h"
-#include "parser.h"
+#include "http_server.h"
+#include "api_handler.h"
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
@@ -25,10 +24,26 @@ void handle_client(int client_sock, Storage* store) {
     }
     buffer[bytes_read] = '\0'; // 确保字符串结尾
 
-    // 找到请求体（跳过请求头）
+    // 提取 HTTP 方法和路径
+    char method[8], path[64];
+    if (sscanf(buffer, "%7s %63s", method, path) != 2) {
+        const char* msg = "{\"error\": \"Malformed request line\"}";
+        char response[BUFFER_SIZE];
+        snprintf(response, sizeof(response),
+            "HTTP/1.0 400 Bad Request\r\n"
+            "Content-Type: application/json\r\n"
+            "Content-Length: %zu\r\n"
+            "\r\n"
+            "%s", strlen(msg), msg);
+        write(client_sock, response, strlen(response));
+        close(client_sock);
+        return;
+    }
+
+    // 找到请求体
     char* body = strstr(buffer, "\r\n\r\n");
     if (!body || strlen(body) < 4) {
-        const char* msg = "{\"error\": \"Malformed request\"}";
+        const char* msg = "{\"error\": \"Missing request body\"}";
         char response[BUFFER_SIZE];
         snprintf(response, sizeof(response),
             "HTTP/1.0 400 Bad Request\r\n"
@@ -40,39 +55,22 @@ void handle_client(int client_sock, Storage* store) {
         close(client_sock);
         return;
     }
+    body += 4; // 跳过 "\r\n\r\n"
 
-    body += 4;  // 跳过 "\r\n\r\n"，body 现在指向请求体部分
+    // 使用 API 处理模块生成响应体
+    char msg[BUFFER_SIZE];
+    handle_api_request(store, path, body, msg, sizeof(msg));
 
-    // 解析 SQL 命令
-    KvCommand cmd;
-    if (parse_input(body, &cmd) != 0) {
-        const char* msg = "{\"error\": \"Invalid command\"}";
-        char response[BUFFER_SIZE];
-        snprintf(response, sizeof(response),
-            "HTTP/1.0 400 Bad Request\r\n"
-            "Content-Type: application/json\r\n"
-            "Content-Length: %zu\r\n"
-            "\r\n"
-            "%s", strlen(msg), msg);
-        write(client_sock, response, strlen(response));
-        close(client_sock);
-        return;
-    }
-
-    // 执行命令
-    ExecutionResult result = engine_execute(store, &cmd);
-
-    // 构建 JSON 响应
-    char response[BUFFER_SIZE];
+    // 构建完整 HTTP 响应
+    char response[BUFFER_SIZE * 2]; // 预留更大空间
     snprintf(response, sizeof(response),
         "HTTP/1.0 200 OK\r\n"
         "Content-Type: application/json\r\n"
         "Content-Length: %zu\r\n"
         "\r\n"
-        "%s", strlen(result.message), result.message);
-    write(client_sock, response, strlen(response));
+        "%s", strlen(msg), msg);
 
-    // 关闭连接
+    write(client_sock, response, strlen(response));
     close(client_sock);
 }
 
