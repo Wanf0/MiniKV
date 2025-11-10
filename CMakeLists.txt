@@ -13,3 +13,15 @@ add_executable(minikv
   src/http_server.c
   src/api_handler.c
 )
+
+add_executable(test_storage
+    test/test_storage.c
+    src/storage.c
+)
+
+# 链接 Check 测试库（不依赖 find_package）
+target_link_libraries(test_storage check subunit m pthread)
+
+# 可选：启用测试集成（ctest）
+enable_testing()
+add_test(NAME StorageTest COMMAND test_storage)
