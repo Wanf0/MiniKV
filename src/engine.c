@@ -1,19 +1,37 @@
 #include <stdio.h>
 #include "../include/engine.h"
+#include <string.h>
+#include "../include/storage.h"
 
-int engine_execute(Storage* storage, const KvCommand* cmd) {
-  switch (cmd->type) {
+ExecutionResult engine_execute(Storage* storage, const KvCommand* cmd) {
+  ExecutionResult result = {0};
+
+  switch(cmd->type) {
     case CMD_SET:
-      storage_set(storage, cmd->key, cmd->value);
-      printf("Successfully set!\n");
-      return 0;
+      if (storage_set(storage, cmd->key, cmd->value) == 0) {
+        snprintf(result.message, sizeof(result.message), "{\"status\": \"ok\"}");
+        result.code = 0;
+      } else {
+        snprintf(result.message, sizeof(result.message), "{\"erroe\": \"set failed\"}");
+        result.code = -1;
+      }
+      break;
+
     case CMD_GET:
       const char* val = storage_get(storage, cmd->key);
-      if (val) printf("%s\n", val);
-      else printf("NULL\n");
-      return 0;
+      if (val) {
+        snprintf(result.message, sizeof(result.message), "{\"value\": \"%s\"}", val);
+        result.code = 0;
+      } else {
+        snprintf(result.message, sizeof(result.message), "{\"error\": \"not found\"}");
+        result.code = -1;
+      }
+      break;
     default:
-      printf("Error: unknown command.\n");
-      return 1;
+      snprintf(result.message, sizeof(result.message), "{\"error\": \"unknown command\"}");
+      result.code = -1;
+      break;
   }
+
+  return result;
 }
